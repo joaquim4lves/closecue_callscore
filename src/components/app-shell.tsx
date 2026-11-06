@@ -75,7 +75,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <a className="brand" href="/">
             CloseCue
           </a>
-          <p className="brand-note">Playbook do workspace</p>
+          <nav className="nav">
+            <a href="/">Playbooks</a>
+            <a href="/calls">Calls</a>
+          </nav>
           <div className="session">
             <span className="mock-flag">Auth mock</span>
             {me ? (

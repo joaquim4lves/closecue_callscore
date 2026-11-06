@@ -3,7 +3,14 @@ import type { NextRequest } from "next/server";
 import { readMockUserId } from "@/lib/auth/mock-session";
 import { logRequest } from "@/lib/http/logger";
 
-const PUBLIC_API = new Set(["/api/health", "/api/dev/users", "/api/dev/session"]);
+const PUBLIC_API = new Set([
+  "/api/health",
+  "/api/dev/users",
+  "/api/dev/session",
+  "/api/webhooks/zoom",
+  "/api/webhooks/meet",
+  "/api/webhooks/fireflies",
+]);
 
 function pathnameOf(request: NextRequest): string {
   const pathname = request.nextUrl.pathname.replace(/\/$/, "");

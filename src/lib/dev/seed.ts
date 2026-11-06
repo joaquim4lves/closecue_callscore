@@ -1,6 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { memberships, organizations, playbookObjections, playbookPhases, playbooks, users } from "../db/schema";
+import {
+  memberships,
+  organizations,
+  playbookObjections,
+  playbookPhases,
+  playbooks,
+  retentionPolicies,
+  users,
+} from "../db/schema";
 import { DEMO, DEMO_OBJECTIONS, DEMO_PHASES } from "./demo-data";
 
 export type SeedResult = {
@@ -36,6 +44,8 @@ export async function seedDemo(): Promise<SeedResult> {
         { orgId: DEMO.orgId, userId: DEMO.sellerId, role: "seller" },
       ])
       .onConflictDoNothing({ target: [memberships.orgId, memberships.userId] });
+
+    await tx.insert(retentionPolicies).values({ orgId: DEMO.orgId }).onConflictDoNothing();
 
     const [existing] = await tx.select().from(playbooks).where(eq(playbooks.id, DEMO.playbookId));
     if (!existing) {

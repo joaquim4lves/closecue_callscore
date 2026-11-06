@@ -31,5 +31,8 @@ describe("mock auth middleware", () => {
     const health = await middleware(new NextRequest("http://127.0.0.1/api/health"));
     expect(health.status).not.toBe(401);
     expect(health.headers.get("x-request-id")).toBeTruthy();
+
+    const zoom = await middleware(new NextRequest("http://127.0.0.1/api/webhooks/zoom", { method: "POST" }));
+    expect(zoom.status).not.toBe(401);
   });
 });

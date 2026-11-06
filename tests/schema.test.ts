@@ -28,6 +28,7 @@ describe("schema constraints and migrations", () => {
   it("migrates down and back up", async () => {
     await runMigrations("down", MIGRATE_DATABASE_URL, { all: true });
     expect(await tableExists("playbooks")).toBe(false);
+    expect(await tableExists("calls")).toBe(false);
     expect(await tableExists("organizations")).toBe(false);
 
     const secondDown = await runMigrations("down", MIGRATE_DATABASE_URL, { all: true });
@@ -39,6 +40,11 @@ describe("schema constraints and migrations", () => {
     expect(await tableExists("playbooks")).toBe(true);
     expect(await tableExists("playbook_phases")).toBe(true);
     expect(await tableExists("playbook_objections")).toBe(true);
+    expect(await tableExists("calls")).toBe(true);
+    expect(await tableExists("transcripts")).toBe(true);
+    expect(await tableExists("transcript_segments")).toBe(true);
+    expect(await tableExists("webhook_inbox")).toBe(true);
+    expect(await tableExists("retention_policies")).toBe(true);
 
     const again = await runMigrations("up", MIGRATE_DATABASE_URL);
     expect(again).toEqual([]);

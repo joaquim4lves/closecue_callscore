@@ -42,6 +42,12 @@ h2 { margin: 0 0 0.5rem; font-size: 1.35rem; }
 }
 .brand { color: var(--ink); text-decoration: none; font-family: Palatino, Georgia, serif; font-size: 1.4rem; }
 .brand-note { margin: 0; color: var(--muted); flex: 1; }
+.nav { display: flex; gap: 14px; flex: 1; }
+.nav a { color: var(--ink); text-decoration: none; font-weight: 600; }
+.filters, .stack-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 12px 0; }
+.filters label, .stack-form label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.badge { border-radius: 999px; padding: 2px 8px; background: #e7f2ee; color: var(--accent); font-size: 0.78rem; font-weight: 650; }
+.row-failed { background: #fff6f6; }
 .session { display: flex; align-items: center; gap: 10px; }
 .mock-flag, .pill {
   border-radius: 999px;

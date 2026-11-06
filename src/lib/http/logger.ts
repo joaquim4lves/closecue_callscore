@@ -20,3 +20,26 @@ export function logRequest(event: RequestLog): void {
     }),
   );
 }
+
+export function logIngest(event: {
+  msg: string;
+  callId?: string | null;
+  externalId?: string | null;
+  source?: string | null;
+  status?: string | null;
+  inboxId?: string | null;
+  error?: string | null;
+}): void {
+  console.info(
+    JSON.stringify({
+      level: event.error ? "error" : "info",
+      msg: event.msg,
+      callId: event.callId ?? null,
+      externalId: event.externalId ?? null,
+      source: event.source ?? null,
+      status: event.status ?? null,
+      inboxId: event.inboxId ?? null,
+      error: event.error ?? null,
+    }),
+  );
+}

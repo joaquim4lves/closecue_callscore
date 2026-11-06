@@ -1,10 +1,10 @@
-# CloseCue / CallScore — fatia 1
+# CloseCue / CallScore — fatia 1 and 2
 
-Playbook MVP for one workspace: organizations, users, roles, and a versioned playbook (phases + objections). One **active** playbook per organization. Drafts never become score input.
+Playbook MVP plus call ingest for one workspace. One **active** playbook per organization. Drafts never become score input.
 
 Auth is **mock only**. Clerk is not installed and is not required to boot.
 
-Out of scope: calls, transcripts, Zoom/Meet/Fireflies webhooks, CallScore, and the CloseCue overlay.
+Fatia 2 ingests calls through a full Zoom webhook. Meet and Fireflies are typed stubs. Upload and paste are the dev fallback. CallScore, the ruins list, and the overlay are still out of scope.
 
 ## Deploy target
 
@@ -142,7 +142,47 @@ curl -s -X POST http://127.0.0.1:3000/api/playbooks/$PLAYBOOK_ID/publish \
   -d '{"replaceActive":true}'
 ```
 
-Logs are JSON lines on stdout and include `requestId` (request header `x-request-id`, or a generated id echoed on the response).
+Logs are JSON lines on stdout and include `requestId` (request header `x-request-id`, or a generated id echoed on the response). Ingest logs also include `callId` and `externalId`.
+
+## Calls (fatia 2)
+
+Zoom is the only production provider. Point the Zoom Event Subscription at:
+
+```text
+POST https://<host>/api/webhooks/zoom
+```
+
+Placeholder env vars (no real secrets in the repo):
+
+```bash
+ZOOM_WEBHOOK_SECRET_TOKEN=replace-with-zoom-secret-token
+ZOOM_ORG_ID=11111111-1111-4111-8111-111111111111
+ZOOM_DEFAULT_SELLER_ID=33333333-3333-4333-8333-333333333333
+STT_PROVIDER=mock
+AUDIO_CONSENT_GATE=off
+```
+
+`ZOOM_ORG_ID` is the workspace that receives Zoom events. The meeting `host_email` is matched to a user in that org; otherwise `ZOOM_DEFAULT_SELLER_ID` is used, then the first seller. Signature is Zoom's `v0:{timestamp}:{rawBody}` HMAC (`x-zm-signature` / `x-zm-request-timestamp`). Invalid signatures return `401`. Valid events are stored in `webhook_inbox` and answered with `202` before ingest finishes in-process. `endpoint.url_validation` returns `plainToken` and `encryptedToken`.
+
+An inline transcript becomes `ready` with segments and does not call STT. An audio URL without transcript goes through `STT_PROVIDER` (`mock` or `fail`) and ends `ready` or `failed`. The same `external_id` does not create a second call.
+
+`POST /api/webhooks/meet` and `POST /api/webhooks/fireflies` return `501`. The `MeetingProvider` stubs throw `ProviderNotImplemented` and have no production logic.
+
+Fallback, with the mock user header:
+
+- `POST /api/calls` JSON `{ "title", "transcript" }` → source `paste`
+- `POST /api/calls` multipart `title` + `audio` file, optional `transcript` → source `upload`
+- `GET /api/calls?source=zoom&period=week&sellerId=`
+- `GET /api/calls/:id`
+- `POST /api/calls/:id/reprocess` (manager)
+
+`bad` is accepted on the list query and ignored. There is no score schema.
+
+In production (`NODE_ENV=production`) or when `AUDIO_CONSENT_GATE=enforce`, audio bytes and audio URLs are rejected unless `consentRecordedAt` is sent. Transcript text is still stored. Demo paste does not need a recording.
+
+Retention defaults are `audio_days=30` and `transcript_days=90` on `retention_policies`. The seed creates that row for the demo org.
+
+The Calls screen lists origin badges, a source filter, this-week empty copy (`calls.empty_week`), and the upload fallback. A failed ingest shows `calls.ingest_failed`.
 
 ## Tests
 
