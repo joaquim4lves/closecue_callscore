@@ -18,6 +18,13 @@ const pasteSchema = z.object({
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
+function flagParam(value: string | null, name: string): boolean | undefined {
+  if (value == null || value === "") return undefined;
+  if (value === "1" || value === "true") return true;
+  if (value === "0" || value === "false") return false;
+  throw new ApiError(400, "invalid_request", `${name} must be true or false.`);
+}
+
 function parseConsent(value: string): Date | null {
   if (!value) return null;
   const date = new Date(value);
@@ -33,6 +40,8 @@ export const GET = withLoggedRoute(async (req) => {
   const sourceRaw = url.searchParams.get("source");
   const periodRaw = url.searchParams.get("period");
   const sellerId = url.searchParams.get("sellerId") ?? undefined;
+  const bad = flagParam(url.searchParams.get("bad"), "bad");
+  const reviewed = flagParam(url.searchParams.get("reviewed"), "reviewed");
   const source = sourceRaw ? sourceSchema.safeParse(sourceRaw) : null;
   if (source && !source.success) throw new ApiError(400, "invalid_request", "Unknown source filter.");
   if (periodRaw && periodRaw !== "week") throw new ApiError(400, "invalid_request", "period must be week.");
@@ -40,6 +49,8 @@ export const GET = withLoggedRoute(async (req) => {
     source: source?.success ? source.data : undefined,
     period: periodRaw === "week" ? "week" : undefined,
     sellerId,
+    bad,
+    reviewed,
   });
   return Response.json(result);
 });

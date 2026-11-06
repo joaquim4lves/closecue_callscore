@@ -7,6 +7,14 @@ import { copy } from "@/lib/copy";
 import { callStatusLabel, formatWhen, sourceLabel } from "@/lib/format";
 import type { CallListResponse, CallSource } from "@/lib/calls/types";
 
+type Metrics = {
+  scoredOk: number;
+  bad: number;
+  badReviewed: number;
+  percentScored: number | null;
+  percentBadReviewed: number | null;
+};
+
 const sources: Array<CallSource | ""> = ["", "zoom", "meet", "fireflies", "upload", "paste"];
 
 export function CallList() {
@@ -14,22 +22,32 @@ export function CallList() {
   const [source, setSource] = useState<CallSource | "">("");
   const [period, setPeriod] = useState<"week" | "">("week");
   const [sellerId, setSellerId] = useState("");
+  const [badOnly, setBadOnly] = useState(false);
   const [data, setData] = useState<CallListResponse | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [transcript, setTranscript] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function load(next?: { source?: CallSource | ""; period?: "week" | ""; sellerId?: string }) {
+  async function load(next?: { source?: CallSource | ""; period?: "week" | ""; sellerId?: string; badOnly?: boolean }) {
     const selectedSource = next?.source ?? source;
     const selectedPeriod = next?.period ?? period;
     const selectedSeller = next?.sellerId ?? sellerId;
+    const selectedBad = next?.badOnly ?? badOnly;
     const params = new URLSearchParams();
     if (selectedSource) params.set("source", selectedSource);
     if (selectedPeriod) params.set("period", selectedPeriod);
     if (selectedSeller) params.set("sellerId", selectedSeller);
+    if (selectedBad) params.set("bad", "true");
     const query = params.toString();
-    setData(await api<CallListResponse>(`/api/calls${query ? `?${query}` : ""}`));
+    const metricsQuery = selectedPeriod === "week" ? "?period=week" : "";
+    const [list, metricBody] = await Promise.all([
+      api<CallListResponse>(`/api/calls${query ? `?${query}` : ""}`),
+      api<Metrics>(`/api/metrics/scoring${metricsQuery}`),
+    ]);
+    setData(list);
+    setMetrics(metricBody);
   }
 
   useEffect(() => {
@@ -97,9 +115,45 @@ export function CallList() {
         <div>
           <h1>Calls</h1>
           <p className="lede">Webhook Zoom entra aqui. Upload e colar são o fallback de desenvolvimento.</p>
+          {metrics ? (
+            <p className="lede">
+              {metrics.scoredOk} scored · {metrics.bad} ruins · {metrics.badReviewed} revisadas
+              {" · "}
+              {metrics.percentScored ?? 0}% scored · {metrics.percentBadReviewed ?? 0}% ruins revisadas
+            </p>
+          ) : null}
+        </div>
+        <div className="footer-actions">
+          <button
+            type="button"
+            aria-pressed={period === "week" && !badOnly}
+            onClick={() => {
+              setPeriod("week");
+              setBadOnly(false);
+              void load({ period: "week", badOnly: false });
+            }}
+          >
+            Esta semana
+          </button>
+          <button
+            type="button"
+            aria-pressed={badOnly}
+            onClick={() => {
+              setPeriod("week");
+              setBadOnly(true);
+              void load({ period: "week", badOnly: true });
+            }}
+          >
+            {copy["calls.bad_chip"]}
+          </button>
         </div>
       </div>
       {error ? <p className="error">{error}</p> : null}
+      {data?.noneActive ? (
+        <p className="callout" role="status">
+          {data.noneActive.copy} <a href="/">Abrir playbooks</a>
+        </p>
+      ) : null}
       {data?.emptyWeek ? (
         <div className="callout" role="status">
           <p>{data.emptyWeek.copy}</p>
@@ -172,6 +226,7 @@ export function CallList() {
           <tr>
             <th>Call</th>
             <th>Origem</th>
+            <th>Score</th>
             <th>Status</th>
             <th>Quando</th>
             <th></th>
@@ -185,6 +240,13 @@ export function CallList() {
                 <td>
                   <span className="badge">{sourceLabel(call.source)}</span>
                 </td>
+                <td>
+                  {call.score?.status === "ok" ? call.score.overall : "—"}
+                  {call.score?.status === "ok" && call.score.badFlag ? <div className="badge">Ruim</div> : null}
+                  {call.score?.reviewedAt ? <div className="muted">{copy["calls.reviewed"]}</div> : null}
+                  {call.score?.status === "failed" ? <div className="muted">{copy["calls.score_failed"]}</div> : null}
+                  {call.score?.shortReason && call.score.status === "ok" ? <div className="muted">{call.score.shortReason}</div> : null}
+                </td>
                 <td>{callStatusLabel(call.status)}</td>
                 <td>{formatWhen(call.startedAt ?? call.createdAt)}</td>
                 <td>
@@ -197,7 +259,7 @@ export function CallList() {
             ))
           ) : (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={6} className="muted">
                 {data?.emptyWeek?.copy ?? "Nenhuma call neste filtro."}
               </td>
             </tr>

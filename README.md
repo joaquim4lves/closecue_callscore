@@ -4,7 +4,7 @@ Playbook MVP plus call ingest for one workspace. One **active** playbook per org
 
 Auth is **mock only**. Clerk is not installed and is not required to boot.
 
-Fatia 2 ingests calls through a full Zoom webhook. Meet and Fireflies are typed stubs. Upload and paste are the dev fallback. CallScore, the ruins list, and the overlay are still out of scope.
+Fatia 2 ingests calls through a full Zoom webhook. Meet and Fireflies are typed stubs. Upload and paste are the dev fallback. Fatia 3 scores ready calls. Fase 1b is the seller overlay beside the call. There is no meeting bot and no live speech-to-text vendor.
 
 ## Deploy target
 
@@ -183,6 +183,46 @@ In production (`NODE_ENV=production`) or when `AUDIO_CONSENT_GATE=enforce`, audi
 Retention defaults are `audio_days=30` and `transcript_days=90` on `retention_policies`. The seed creates that row for the demo org.
 
 The Calls screen lists origin badges, a source filter, this-week empty copy (`calls.empty_week`), and the upload fallback. A failed ingest shows `calls.ingest_failed`.
+
+## CallScore (fatia 3)
+
+When a call becomes `ready` and the org has an active playbook, a thin score is stored: overall 0–100, phase scores, objection scores, up to three short reasons, and `bad_flag`. There is no coaching chat.
+
+`SCORE_PROVIDER=mock` (default) is a deterministic rules check against checklist items and objection signals. `SCORE_PROVIDER=fail` records `scores.status=failed`. A missing active playbook does not invent a score; the list and detail show `playbook.none_active`.
+
+A call is bad when overall is below the org threshold, or a detected objection is unanswered. The threshold lives on `retention_policies.bad_score_below` (default 60). `SCORE_BAD_BELOW` is the fallback when the org has no row yet.
+
+- `GET /api/calls?bad=true&reviewed=false&period=week&source=&sellerId=`
+- `GET /api/calls/:id` includes the score and the evidence segments
+- `POST /api/calls/:id/review` marks it reviewed (manager)
+- `POST /api/calls/:id/rescore` retries a failed score or refreshes after the active playbook version changes (manager)
+- `GET /api/metrics/scoring?period=week` returns `% scored` (ready calls with `score.status=ok` / ready calls) and `% ruins revisadas` (reviewed bad scores / bad scores)
+
+The Calls screen has Esta semana / Ruins, the metric summary, score and origin on each row, and the detail gaps. `calls.score_failed` is the retry state.
+
+## Overlay (fase 1b)
+
+The seller panel at `/overlay` is a web panel beside the call. It does not join the meeting. Cues come from `matchAdherence`, the same phase and objection matcher CallScore uses, pinned to the active playbook version at session start.
+
+```bash
+# as the seeded seller
+curl -s -X POST http://127.0.0.1:3000/api/cue-sessions \
+  -H "content-type: application/json" \
+  -H "x-mock-user-id: 33333333-3333-4333-8333-333333333333" \
+  -d '{}'
+curl -s -X POST http://127.0.0.1:3000/api/cue-sessions/$SESSION/ticks \
+  -H "content-type: application/json" \
+  -H "x-mock-user-id: 33333333-3333-4333-8333-333333333333" \
+  -d '{"simulate":"objection"}'
+```
+
+- `POST /api/cue-sessions` starts a live session when a playbook is active, or an idle session with `noneActive` when it is not
+- `POST /api/cue-sessions/:id/ticks` accepts `{ "text" }` or `{ "simulate": "phase" | "objection" }`
+- `GET /api/cue-sessions/:id/events` polls; `GET /api/cue-sessions/:id/stream` is SSE
+- `POST /api/cue-events/:id/ack` and `/dismiss` persist acknowledgement
+- `POST /api/cue-sessions/:id/end` closes the session
+
+Without a session the panel shows `status.no_audio`. If the SSE connection drops, the panel shows offline and `action.retry_audio` reconnects. There is no live speech-to-text vendor: paste a line or use the simulate buttons.
 
 ## Tests
 

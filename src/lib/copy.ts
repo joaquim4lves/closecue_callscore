@@ -12,6 +12,17 @@ export const copy = {
   "calls.ingest_failed": "Não recebemos esta call — tente o upload",
   "calls.connect_source": "Conectar Meet/Zoom/Fireflies",
   "calls.empty_week": "Ainda não há calls scored esta semana",
+  "calls.bad_chip": "Ruins",
+  "calls.reviewed": "Revisada",
+  "calls.mark_reviewed": "Marquei como revisada",
+  "calls.score_failed": "Não foi possível pontuar esta call",
+  "calls.retry_score": "Tentar de novo",
+  "status.ready": "Pronto",
+  "status.in_call": "Em call",
+  "status.no_audio": "Sem áudio — sugestões pausadas",
+  "action.retry_audio": "Tentar de novo",
+  "overlay.dismiss": "Dispensar",
+  "overlay.ack": "Entendi",
 } as const;
 
 export type CopyKey = keyof typeof copy;

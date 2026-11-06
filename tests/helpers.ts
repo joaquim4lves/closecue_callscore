@@ -9,7 +9,7 @@ type Handler = (req: Request, ctx: RouteContext) => Promise<Response>;
 
 export async function resetDb(): Promise<void> {
   await getDb().execute(
-    sql`TRUNCATE transcript_segments, transcripts, calls, webhook_inbox, retention_policies, playbook_objections, playbook_phases, playbooks, memberships, users, organizations RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE cue_events, cue_sessions, scores, transcript_segments, transcripts, calls, webhook_inbox, retention_policies, playbook_objections, playbook_phases, playbooks, memberships, users, organizations RESTART IDENTITY CASCADE`,
   );
 }
 

@@ -1,13 +1,15 @@
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { AuthContext } from "../auth/context";
 import { isUuid } from "../auth/mock-session";
 import { copy } from "../copy";
+import { startOfWeekUtc } from "./week";
 import { getDb } from "../db/client";
 import {
   calls,
   memberships,
   playbooks,
   retentionPolicies,
+  scores,
   transcriptSegments,
   transcripts,
   users,
@@ -17,11 +19,12 @@ import {
 import { ApiError, pgErrorCode } from "../http/errors";
 import { logIngest } from "../http/logger";
 import { audioPersistenceAllowed, CONSENT_REQUIRED_MESSAGE } from "../ingest/consent";
+import { asObjectionScores, asPhaseScores, scoreReadyCall } from "../scoring/service";
 import { zoomProvider } from "../ingest/providers";
 import { hashWebhookHeaders, zoomEncryptedToken } from "../ingest/zoom-signature";
 import { getSpeechToText } from "../ingest/stt";
 import type { NormalizedMeeting, TranscriptSegmentInput } from "../ingest/types";
-import type { CallDetail, CallListResponse, CallSummary } from "./types";
+import type { CallDetail, CallListResponse, CallSegment, CallSummary, ScoreDetail, ScoreSummary } from "./types";
 
 type CallRow = typeof calls.$inferSelect;
 
@@ -33,15 +36,7 @@ function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-export function startOfWeekUtc(now = new Date()): Date {
-  const day = now.getUTCDay();
-  const mondayOffset = day === 0 ? 6 : day - 1;
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  start.setUTCDate(start.getUTCDate() - mondayOffset);
-  return start;
-}
-
-function toSummary(row: CallRow): CallSummary {
+function toSummary(row: CallRow, score: ScoreSummary | null): CallSummary {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -58,7 +53,30 @@ function toSummary(row: CallRow): CallSummary {
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
     audioStored: Boolean(row.audioUrl),
+    score,
   };
+}
+
+function scoreSummary(row: typeof scores.$inferSelect | undefined, activeVersion: number | null): ScoreSummary | null {
+  if (!row) return null;
+  return {
+    overall: row.overall,
+    badFlag: row.badFlag,
+    shortReason: row.shortReason,
+    status: row.status,
+    reviewedAt: iso(row.reviewedAt),
+    playbookId: row.playbookId,
+    playbookVersion: row.playbookVersion,
+    stale: activeVersion != null && row.playbookVersion !== activeVersion,
+  };
+}
+
+function evidenceFor(ids: string[], segments: CallSegment[]) {
+  const byId = new Map(segments.map((segment) => [segment.id, segment]));
+  return ids.flatMap((id) => {
+    const segment = byId.get(id);
+    return segment ? [{ id, text: segment.text, speaker: segment.speaker }] : [];
+  });
 }
 
 async function loadDetail(id: string): Promise<CallDetail> {
@@ -72,17 +90,46 @@ async function loadDetail(id: string): Promise<CallDetail> {
         .where(eq(transcriptSegments.transcriptId, transcript.id))
         .orderBy(asc(transcriptSegments.idx))
     : [];
+  const mapped: CallSegment[] = segments.map((segment) => ({
+    id: segment.id,
+    idx: segment.idx,
+    tStartMs: segment.tStartMs,
+    tEndMs: segment.tEndMs,
+    speaker: segment.speaker,
+    text: segment.text,
+  }));
+  const activeVersion = await activePlaybookVersion(row.orgId);
+  const [scoreRow] = await getDb().select().from(scores).where(eq(scores.callId, id));
+  const summary = scoreSummary(scoreRow, activeVersion);
+  const scoreDetail: ScoreDetail | null =
+    scoreRow && summary
+      ? {
+          ...summary,
+          reasons: Array.isArray(scoreRow.reasons) ? scoreRow.reasons.filter((item) => typeof item === "string").slice(0, 3) : [],
+          errorMessage: scoreRow.errorMessage,
+          phaseScores: asPhaseScores(scoreRow.phaseScores).map((phase) => ({
+            phaseId: phase.phaseId,
+            name: phase.name,
+            score: phase.score,
+            gap: phase.gap,
+            adherence: phase.adherence,
+            evidence: evidenceFor(phase.evidenceSegmentIds, mapped),
+          })),
+          objectionScores: asObjectionScores(scoreRow.objectionScores).map((item) => ({
+            objectionId: item.objectionId,
+            label: item.label,
+            hit: item.hit,
+            score: item.score,
+            evidence: evidenceFor(item.evidenceSegmentIds, mapped),
+          })),
+        }
+      : null;
   return {
-    ...toSummary(row),
+    ...toSummary(row, summary),
     transcriptProvider: transcript?.provider ?? null,
-    segments: segments.map((segment) => ({
-      id: segment.id,
-      idx: segment.idx,
-      tStartMs: segment.tStartMs,
-      tEndMs: segment.tEndMs,
-      speaker: segment.speaker,
-      text: segment.text,
-    })),
+    segments: mapped,
+    scoreDetail,
+    noneActive: activeVersion == null,
   };
 }
 
@@ -96,6 +143,14 @@ async function requireVisible(auth: AuthContext, id: string): Promise<CallRow> {
 
 export async function ensureRetentionPolicy(orgId: string): Promise<void> {
   await getDb().insert(retentionPolicies).values({ orgId }).onConflictDoNothing();
+}
+
+async function activePlaybookVersion(orgId: string): Promise<number | null> {
+  const [row] = await getDb()
+    .select({ id: playbooks.id, version: playbooks.version })
+    .from(playbooks)
+    .where(and(eq(playbooks.orgId, orgId), eq(playbooks.status, "active")));
+  return row?.version ?? null;
 }
 
 async function activePlaybookId(orgId: string): Promise<string | null> {
@@ -215,6 +270,7 @@ async function upsertExternalCall(input: {
 
 async function finishCall(call: CallRow, meeting: NormalizedMeeting): Promise<CallRow> {
   if (call.status === "ready") {
+    await scoreReadyCall(call.id);
     logIngest({
       msg: "ingest",
       callId: call.id,
@@ -242,6 +298,7 @@ async function finishCall(call: CallRow, meeting: NormalizedMeeting): Promise<Ca
         .where(eq(calls.id, call.id))
         .returning();
       const ready = updated ?? call;
+      await scoreReadyCall(ready.id);
       logIngest({
         msg: "ingest",
         callId: ready.id,
@@ -294,6 +351,7 @@ async function finishCall(call: CallRow, meeting: NormalizedMeeting): Promise<Ca
       .where(eq(calls.id, call.id))
       .returning();
     const ready = updated ?? call;
+    await scoreReadyCall(ready.id);
     logIngest({
       msg: "ingest",
       callId: ready.id,
@@ -443,7 +501,7 @@ export async function acceptZoomWebhook(rawBody: string, headers: Headers): Prom
 
 export async function listCalls(
   auth: AuthContext,
-  query: { source?: CallSource; period?: "week"; sellerId?: string },
+  query: { source?: CallSource; period?: "week"; sellerId?: string; bad?: boolean; reviewed?: boolean },
 ): Promise<CallListResponse> {
   const filters = [eq(calls.orgId, auth.orgId)];
   if (auth.role === "seller") {
@@ -462,14 +520,41 @@ export async function listCalls(
     .from(calls)
     .where(and(...filters))
     .orderBy(desc(calls.createdAt));
+  const activeVersion = await activePlaybookVersion(auth.orgId);
+  const scoreRows =
+    rows.length === 0
+      ? []
+      : await getDb()
+          .select()
+          .from(scores)
+          .where(
+            inArray(
+              scores.callId,
+              rows.map((row) => row.id),
+            ),
+          );
+  const byCall = new Map(scoreRows.map((score) => [score.callId, score]));
+  let summaries = rows.map((row) => toSummary(row, scoreSummary(byCall.get(row.id), activeVersion)));
+  if (query.bad === true) summaries = summaries.filter((call) => call.score?.status === "ok" && call.score.badFlag);
+  if (query.bad === false) summaries = summaries.filter((call) => call.score?.status === "ok" && !call.score.badFlag);
+  if (query.reviewed === true) summaries = summaries.filter((call) => Boolean(call.score?.reviewedAt));
+  if (query.reviewed === false) summaries = summaries.filter((call) => call.score != null && !call.score.reviewedAt);
+  summaries.sort((left, right) => {
+    const rank = (call: CallSummary) =>
+      call.score?.status === "ok" && call.score.badFlag && !call.score.reviewedAt ? 0 : 1;
+    return rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt);
+  });
+  const unfilteredWeek = query.period === "week" && query.bad == null && query.reviewed == null;
   return {
-    calls: rows.map(toSummary),
+    calls: summaries,
     emptyWeek:
-      query.period === "week" && rows.length === 0
+      unfilteredWeek && summaries.length === 0
         ? { copyKey: "calls.empty_week", copy: copy["calls.empty_week"] }
         : null,
     connectSource: { copyKey: "calls.connect_source", copy: copy["calls.connect_source"] },
     ingestFailed: { copyKey: "calls.ingest_failed", copy: copy["calls.ingest_failed"] },
+    noneActive: activeVersion == null ? { copyKey: "playbook.none_active", copy: copy["playbook.none_active"] } : null,
+    scoreFailed: { copyKey: "calls.score_failed", copy: copy["calls.score_failed"] },
   };
 }
 

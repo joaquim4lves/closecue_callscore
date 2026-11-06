@@ -78,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="nav">
             <a href="/">Playbooks</a>
             <a href="/calls">Calls</a>
+            <a href="/overlay">Overlay</a>
           </nav>
           <div className="session">
             <span className="mock-flag">Auth mock</span>
