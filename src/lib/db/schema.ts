@@ -105,6 +105,7 @@ export const playbookObjections = pgTable(
   (table) => [uniqueIndex("playbook_objections_sort_unique").on(table.playbookId, table.sortOrder)],
 );
 
+export const scoreStatus = pgEnum("score_status", ["ok", "failed"]);
 export const callSource = pgEnum("call_source", ["upload", "paste", "meet", "zoom", "fireflies"]);
 export const callStatus = pgEnum("call_status", ["pending", "processing", "ready", "failed"]);
 export const segmentSpeaker = pgEnum("segment_speaker", ["seller", "prospect", "unknown"]);
@@ -193,10 +194,42 @@ export const retentionPolicies = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     audioDays: integer("audio_days").notNull().default(30),
     transcriptDays: integer("transcript_days").notNull().default(90),
+    badScoreBelow: integer("bad_score_below").notNull().default(60),
   },
   (table) => [
     check("retention_audio_days_positive", sql`${table.audioDays} > 0`),
     check("retention_transcript_days_positive", sql`${table.transcriptDays} > 0`),
+    check("retention_bad_score_range", sql`${table.badScoreBelow} >= 0 AND ${table.badScoreBelow} <= 100`),
+  ],
+);
+
+export const scores = pgTable(
+  "scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    callId: uuid("call_id")
+      .notNull()
+      .unique()
+      .references(() => calls.id, { onDelete: "cascade" }),
+    playbookId: uuid("playbook_id").references(() => playbooks.id, { onDelete: "set null" }),
+    playbookVersion: integer("playbook_version").notNull(),
+    overall: integer("overall"),
+    badFlag: boolean("bad_flag").notNull().default(false),
+    shortReason: text("short_reason"),
+    phaseScores: jsonb("phase_scores").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    objectionScores: jsonb("objection_scores").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    reasons: jsonb("reasons").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    model: text("model"),
+    promptVersion: text("prompt_version"),
+    status: scoreStatus("status").notNull(),
+    errorMessage: text("error_message"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("scores_overall_range", sql`${table.overall} IS NULL OR (${table.overall} >= 0 AND ${table.overall} <= 100)`),
+    check("scores_ok_has_overall", sql`${table.status} <> 'ok' OR ${table.overall} IS NOT NULL`),
   ],
 );
 

@@ -32,6 +32,30 @@ export function CallDetailView({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, me?.userId, id]);
 
+  async function rescore() {
+    setPending(true);
+    setError(null);
+    try {
+      setCall(await api<CallDetail>(`/api/calls/${id}/rescore`, { method: "POST" }));
+    } catch (reason) {
+      setError(reason instanceof ApiClientError ? reason.message : "Não foi possível pontuar de novo.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function markReviewed() {
+    setPending(true);
+    setError(null);
+    try {
+      setCall(await api<CallDetail>(`/api/calls/${id}/review`, { method: "POST" }));
+    } catch (reason) {
+      setError(reason instanceof ApiClientError ? reason.message : "Não foi possível marcar como revisada.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function reprocess() {
     setPending(true);
     setError(null);
@@ -70,6 +94,71 @@ export function CallDetailView({ id }: { id: string }) {
         ) : null}
       </div>
       {call.status === "failed" ? <p className="callout">{copy["calls.ingest_failed"]}</p> : null}
+      {call.noneActive && !call.score ? (
+        <p className="callout" role="status">
+          {copy["playbook.none_active"]} <a href="/">Abrir playbooks</a>
+        </p>
+      ) : null}
+      {call.score?.status === "failed" ? (
+        <p className="callout" role="status">
+          {copy["calls.score_failed"]}
+          {me.role === "manager" ? (
+            <button type="button" onClick={() => void rescore()} disabled={pending}>
+              {copy["calls.retry_score"]}
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+      {call.scoreDetail?.status === "ok" ? (
+        <div className="score-block">
+          <p className="score-number">{call.scoreDetail.overall}</p>
+          <p className="meta-row">
+            {call.scoreDetail.badFlag ? <span className="badge">Ruim</span> : <span className="badge">OK</span>}
+            {call.scoreDetail.reviewedAt ? <span>{copy["calls.reviewed"]}</span> : null}
+            {call.scoreDetail.stale ? <span>Playbook mudou desde este score</span> : null}
+          </p>
+          <ul>
+            {call.scoreDetail.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <h2>Fases</h2>
+          {call.scoreDetail.phaseScores.map((phase) => (
+            <article key={phase.phaseId}>
+              <strong>
+                {phase.name} · {phase.adherence} · {phase.score}
+              </strong>
+              {phase.gap ? <p className="muted">{phase.gap}</p> : null}
+              {phase.evidence.map((item) => (
+                <blockquote key={item.id}>{item.text}</blockquote>
+              ))}
+            </article>
+          ))}
+          <h2>Objeções</h2>
+          {call.scoreDetail.objectionScores.length === 0 ? <p className="muted">Sem objeções no playbook.</p> : null}
+          {call.scoreDetail.objectionScores.map((item) => (
+            <article key={item.objectionId}>
+              <strong>
+                {item.label} · {item.hit ? "detectada" : "não detectada"}
+                {item.score != null ? ` · ${item.score}` : ""}
+              </strong>
+              {item.evidence.map((evidence) => (
+                <blockquote key={evidence.id}>{evidence.text}</blockquote>
+              ))}
+            </article>
+          ))}
+          {me.role === "manager" && !call.scoreDetail.reviewedAt ? (
+            <button type="button" className="primary" onClick={() => void markReviewed()} disabled={pending}>
+              {copy["calls.mark_reviewed"]}
+            </button>
+          ) : null}
+          {me.role === "manager" && call.scoreDetail.stale ? (
+            <button type="button" onClick={() => void rescore()} disabled={pending}>
+              Atualizar score
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {call.errorMessage ? <p className="muted">{call.errorMessage}</p> : null}
       {error ? <p className="error">{error}</p> : null}
       <h2>Transcrição</h2>
