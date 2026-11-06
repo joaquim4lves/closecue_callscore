@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS transcript_segments;
+DROP TABLE IF EXISTS transcripts;
+DROP TABLE IF EXISTS webhook_inbox;
+DROP TABLE IF EXISTS calls;
+DROP TABLE IF EXISTS retention_policies;
+DROP TYPE IF EXISTS webhook_provider;
+DROP TYPE IF EXISTS segment_speaker;
+DROP TYPE IF EXISTS call_status;
+DROP TYPE IF EXISTS call_source;
