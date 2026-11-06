@@ -238,4 +238,37 @@ export type PlaybookStatus = (typeof playbookStatus.enumValues)[number];
 export type CallSource = (typeof callSource.enumValues)[number];
 export type CallStatus = (typeof callStatus.enumValues)[number];
 export type SegmentSpeaker = (typeof segmentSpeaker.enumValues)[number];
+export const cueSessionStatus = pgEnum("cue_session_status", ["idle", "live", "ended"]);
+
+export const cueSessions = pgTable("cue_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  sellerId: uuid("seller_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  callId: uuid("call_id").references(() => calls.id, { onDelete: "set null" }),
+  playbookId: uuid("playbook_id").references(() => playbooks.id, { onDelete: "set null" }),
+  playbookVersion: integer("playbook_version"),
+  status: cueSessionStatus("status").notNull().default("idle"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
+export const cueEvents = pgTable("cue_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => cueSessions.id, { onDelete: "cascade" }),
+  phaseId: uuid("phase_id").references(() => playbookPhases.id, { onDelete: "set null" }),
+  objectionId: uuid("objection_id").references(() => playbookObjections.id, { onDelete: "set null" }),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  firedAt: timestamp("fired_at", { withTimezone: true }).notNull().defaultNow(),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+});
+
 export type WebhookProvider = (typeof webhookProvider.enumValues)[number];
+export type CueSessionStatus = (typeof cueSessionStatus.enumValues)[number];

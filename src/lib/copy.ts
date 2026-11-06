@@ -17,6 +17,12 @@ export const copy = {
   "calls.mark_reviewed": "Marquei como revisada",
   "calls.score_failed": "Não foi possível pontuar esta call",
   "calls.retry_score": "Tentar de novo",
+  "status.ready": "Pronto",
+  "status.in_call": "Em call",
+  "status.no_audio": "Sem áudio — sugestões pausadas",
+  "action.retry_audio": "Tentar de novo",
+  "overlay.dismiss": "Dispensar",
+  "overlay.ack": "Entendi",
 } as const;
 
 export type CopyKey = keyof typeof copy;

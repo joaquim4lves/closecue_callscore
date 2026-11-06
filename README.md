@@ -4,7 +4,7 @@ Playbook MVP plus call ingest for one workspace. One **active** playbook per org
 
 Auth is **mock only**. Clerk is not installed and is not required to boot.
 
-Fatia 2 ingests calls through a full Zoom webhook. Meet and Fireflies are typed stubs. Upload and paste are the dev fallback. CallScore, the ruins list, and the overlay are still out of scope.
+Fatia 2 ingests calls through a full Zoom webhook. Meet and Fireflies are typed stubs. Upload and paste are the dev fallback. Fatia 3 scores ready calls. Fase 1b is the seller overlay beside the call. There is no meeting bot and no live speech-to-text vendor.
 
 ## Deploy target
 
@@ -199,6 +199,30 @@ A call is bad when overall is below the org threshold, or a detected objection i
 - `GET /api/metrics/scoring?period=week` returns `% scored` (ready calls with `score.status=ok` / ready calls) and `% ruins revisadas` (reviewed bad scores / bad scores)
 
 The Calls screen has Esta semana / Ruins, the metric summary, score and origin on each row, and the detail gaps. `calls.score_failed` is the retry state.
+
+## Overlay (fase 1b)
+
+The seller panel at `/overlay` is a web panel beside the call. It does not join the meeting. Cues come from `matchAdherence`, the same phase and objection matcher CallScore uses, pinned to the active playbook version at session start.
+
+```bash
+# as the seeded seller
+curl -s -X POST http://127.0.0.1:3000/api/cue-sessions \
+  -H "content-type: application/json" \
+  -H "x-mock-user-id: 33333333-3333-4333-8333-333333333333" \
+  -d '{}'
+curl -s -X POST http://127.0.0.1:3000/api/cue-sessions/$SESSION/ticks \
+  -H "content-type: application/json" \
+  -H "x-mock-user-id: 33333333-3333-4333-8333-333333333333" \
+  -d '{"simulate":"objection"}'
+```
+
+- `POST /api/cue-sessions` starts a live session when a playbook is active, or an idle session with `noneActive` when it is not
+- `POST /api/cue-sessions/:id/ticks` accepts `{ "text" }` or `{ "simulate": "phase" | "objection" }`
+- `GET /api/cue-sessions/:id/events` polls; `GET /api/cue-sessions/:id/stream` is SSE
+- `POST /api/cue-events/:id/ack` and `/dismiss` persist acknowledgement
+- `POST /api/cue-sessions/:id/end` closes the session
+
+Without a session the panel shows `status.no_audio`. If the SSE connection drops, the panel shows offline and `action.retry_audio` reconnects. There is no live speech-to-text vendor: paste a line or use the simulate buttons.
 
 ## Tests
 

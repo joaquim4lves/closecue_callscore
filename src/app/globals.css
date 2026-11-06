@@ -51,6 +51,10 @@ h2 { margin: 0 0 0.5rem; font-size: 1.35rem; }
 .score-block { display: grid; gap: 10px; margin: 12px 0 20px; }
 .score-block article { display: grid; gap: 4px; }
 .score-block blockquote { margin: 0; color: var(--muted); }
+.overlay-card { max-width: 440px; display: grid; gap: 12px; }
+.overlay-card h1 { font-size: 1.6rem; }
+.cue-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #f7fbf8; display: grid; gap: 6px; }
+.offline { background: #fff4df; color: #6d4b10; border-radius: 10px; padding: 10px 12px; }
 .row-failed { background: #fff6f6; }
 .session { display: flex; align-items: center; gap: 10px; }
 .mock-flag, .pill {
